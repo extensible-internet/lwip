@@ -558,7 +558,7 @@ altcp_mbedtls_lower_poll(void *arg, struct altcp_pcb *inner_conn)
       altcp_mbedtls_state_t *state = (altcp_mbedtls_state_t *)conn->state;
       /* try to send more if we failed before */
       mbedtls_ssl_flush_output(&state->ssl_context);
-      if (altcp_mbedtls_handle_rx_appldata(conn, state) == ERR_ABRT) {
+      if (altcp_mbedtls_lower_recv_process(conn, state) == ERR_ABRT) {
         return ERR_ABRT;
       }
     }
@@ -1280,7 +1280,17 @@ altcp_mbedtls_bio_send(void *ctx, const unsigned char *dataptr, size_t size)
   LWIP_ASSERT("state != NULL", state != NULL);
 
   while (size_left) {
-    u16_t write_len = (u16_t)LWIP_MIN(size_left, 0xFFFF);
+    u16_t max_write_len = (u16_t)LWIP_MIN(altcp_sndbuf(conn->inner_conn), 0xFFFF);
+    if (max_write_len == 0) {
+      if (written) {
+        return written;
+      }
+
+      return MBEDTLS_ERR_SSL_WANT_WRITE;
+    }
+
+    u16_t write_len = (u16_t)LWIP_MIN(size_left, max_write_len);
+
     err_t err = altcp_write(conn->inner_conn, (const void *)dataptr, write_len, apiflags);
     if (err == ERR_OK) {
       written += write_len;
@@ -1290,7 +1300,8 @@ altcp_mbedtls_bio_send(void *ctx, const unsigned char *dataptr, size_t size)
       if (written) {
         return written;
       }
-      return 0; /* MBEDTLS_ERR_SSL_WANT_WRITE; */
+
+      return MBEDTLS_ERR_SSL_WANT_WRITE;
     } else {
       LWIP_ASSERT("tls_write, tcp_write: err != ERR MEM", 0);
       /* @todo: return MBEDTLS_ERR_NET_CONN_RESET or MBEDTLS_ERR_NET_SEND_FAILED */
