@@ -323,7 +323,7 @@ altcp_tcp_close(struct altcp_pcb *conn)
   pcb = (struct tcp_pcb *)conn->state;
   if (pcb) {
     err_t err;
-    tcp_poll_fn oldpoll = pcb->poll;
+    tcp_poll_fn oldpoll = pcb->state != LISTEN ? pcb->poll : NULL;
     altcp_tcp_remove_callbacks(pcb);
     err = tcp_close(pcb);
     if (err != ERR_OK) {
