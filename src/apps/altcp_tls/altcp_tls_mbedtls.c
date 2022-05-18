@@ -530,6 +530,12 @@ altcp_mbedtls_lower_sent(void *arg, struct altcp_pcb *inner_conn, u16_t len)
     state->overhead_bytes_adjust -= len;
     /* try to send more if we failed before (may increase overhead adjust counter) */
     mbedtls_ssl_flush_output(&state->ssl_context);
+    if (!(state->flags & ALTCP_MBEDTLS_FLAGS_HANDSHAKE_DONE)) {
+      /* Perhaps the data sent will allow the ongoing handshake to progress. */
+      if (altcp_mbedtls_lower_recv_process(conn, state) == ERR_ABRT) {
+        return ERR_ABRT;
+      }
+    }
     /* remove calculated overhead from ACKed bytes len */
     app_len = len - (u16_t)overhead;
     /* update application write counter and inform application */
@@ -1280,7 +1286,15 @@ altcp_mbedtls_bio_send(void *ctx, const unsigned char *dataptr, size_t size)
   LWIP_ASSERT("state != NULL", state != NULL);
 
   while (size_left) {
-    u16_t write_len = (u16_t)LWIP_MIN(size_left, 0xFFFF);
+    u16_t max_write_len = (u16_t)LWIP_MIN(altcp_sndbuf(conn->inner_conn), 0xFFFF);
+    if (max_write_len == 0) {
+      if (written) {
+        return written;
+      }
+      return MBEDTLS_ERR_SSL_WANT_WRITE;
+    }
+
+    u16_t write_len = (u16_t)LWIP_MIN(size_left, max_write_len);
     err_t err = altcp_write(conn->inner_conn, (const void *)dataptr, write_len, apiflags);
     if (err == ERR_OK) {
       written += write_len;
@@ -1290,7 +1304,7 @@ altcp_mbedtls_bio_send(void *ctx, const unsigned char *dataptr, size_t size)
       if (written) {
         return written;
       }
-      return 0; /* MBEDTLS_ERR_SSL_WANT_WRITE; */
+      return MBEDTLS_ERR_SSL_WANT_WRITE;
     } else {
       LWIP_ASSERT("tls_write, tcp_write: err != ERR MEM", 0);
       /* @todo: return MBEDTLS_ERR_NET_CONN_RESET or MBEDTLS_ERR_NET_SEND_FAILED */
