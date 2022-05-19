@@ -330,7 +330,9 @@ altcp_tcp_close(struct altcp_pcb *conn)
       /* not closed, set up all callbacks again */
       altcp_tcp_setup_callbacks(conn, pcb);
       /* poll callback is not included in the above */
-      tcp_poll(pcb, oldpoll, pcb->pollinterval);
+      if (pcb->state != LISTEN) {
+        tcp_poll(pcb, oldpoll, pcb->pollinterval);
+      }
       return err;
     }
     conn->state = NULL; /* unsafe to reference pcb after tcp_close(). */
