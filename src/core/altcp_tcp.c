@@ -323,14 +323,16 @@ altcp_tcp_close(struct altcp_pcb *conn)
   pcb = (struct tcp_pcb *)conn->state;
   if (pcb) {
     err_t err;
-    tcp_poll_fn oldpoll = pcb->poll;
+    tcp_poll_fn oldpoll = pcb->state != LISTEN ? pcb->poll : NULL;
     altcp_tcp_remove_callbacks(pcb);
     err = tcp_close(pcb);
     if (err != ERR_OK) {
       /* not closed, set up all callbacks again */
       altcp_tcp_setup_callbacks(conn, pcb);
       /* poll callback is not included in the above */
-      tcp_poll(pcb, oldpoll, pcb->pollinterval);
+      if (pcb->state != LISTEN) {
+        tcp_poll(pcb, oldpoll, pcb->pollinterval);
+      }
       return err;
     }
     conn->state = NULL; /* unsafe to reference pcb after tcp_close(). */
